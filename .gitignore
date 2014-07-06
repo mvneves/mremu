@@ -1,10 +1,6 @@
 *.pyc
 config.json-*
-hadoop/logs/*
-hadoop/tmp/*
 hadoop/done.json
-history/*
-output/*
 error-*
 output-*
 examples/*.json
