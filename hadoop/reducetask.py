@@ -128,7 +128,7 @@ class ReduceCopier(Thread):
         self.partition.dstPort = self.port
                 
         print "ReduceCopier: starting iperf server at %s:%d" % (self.partition.dstAddress, self.partition.dstPort)
-        cmd = "./hadoop/iperf-server %s %d" % (self.partition.dstAddress, self.partition.dstPort)
+        cmd = "./trafficgen/iperf-server %s %d" % (self.partition.dstAddress, self.partition.dstPort)
         print "ReduceCopier: run %s" % cmd
         p = Popen(cmd, shell=True)
         

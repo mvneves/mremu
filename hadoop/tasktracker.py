@@ -16,6 +16,8 @@ from trace import TraceOutput
 
 TIMEOUT = 3600
 
+MININET_BW = 0.1
+
 class TaskTracker(Thread):
     def __init__(self, trace, config, maps, reduces, numTransfers):
         Thread.__init__(self)
@@ -279,9 +281,9 @@ class MapOutputServlet(Thread):
 
     def run(self):
         print "MapOutputServlet: starting iperf client"
-        size = self.partition.size * 0.01
+        size = self.partition.size * MININET_BW
         #size = 64
-        cmd = "./hadoop/iperf-client %s %s %d %d" % (self.partition.srcAddress, self.partition.dstAddress, self.partition.dstPort, size)
+        cmd = "./trafficgen/iperf-client %s %s %d %d" % (self.partition.srcAddress, self.partition.dstAddress, self.partition.dstPort, size)
         print "MapOutputServlet: run %s" % cmd
         p = Popen(cmd, shell=True)
         p.wait()
