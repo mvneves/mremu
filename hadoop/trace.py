@@ -29,8 +29,9 @@ class Trace(object):
         reducers = sorted([x["startTime"] for x in self.trace["tasks"] if x["type"] == "REDUCE" and x["host"] == host])
         if len(reducers) < 1:
             self.initialReduceDelay = 0
-        self.initialReduceDelay = reducers[0] - self.trace["startTime"]
-        
+        else:
+            self.initialReduceDelay = reducers[0] - self.trace["startTime"]
+
     def sort_ip_list(self, ip_list):
         """Sort an IP address list."""
         from IPy import IP
