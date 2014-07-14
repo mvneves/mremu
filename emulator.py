@@ -79,7 +79,7 @@ if __name__ == '__main__':
 	topology = config["networkTopology"]
 	if topology == "singleswitch":
 		net = SingleSwitchNet(numHosts=config["numHostsPerSwitch"],
-			bw=config["bandwidth"],
+			bw=config["bandwidthMininet"],
 			cpu=config["cpuLimit"],
 			queue=config["queue"],
 			remoteController=config["remoteController"])
@@ -87,24 +87,24 @@ if __name__ == '__main__':
 		net = DumbbellNet(numSwitches=config["numSwitches"],
 			numHostsPerSwitch=config["numHostsPerSwitch"],
 			L=config["numberTrunkLinks"],
-			bw=config["bandwidth"],
+			bw=config["bandwidthMininet"],
 			cpu=config["cpuLimit"],
 			queue=config["queue"],
 			remoteController=config["remoteController"])
 	elif topology == "singlepathtree":
 		net = SinglepathTreeNet(depth=2, fanout=4,
-			bw=config["bandwidth"],
+			bw=config["bandwidthMininet"],
                         cpu=config["cpuLimit"],
                         queue=config["queue"],
 			remoteController=config["remoteController"])
 	elif topology == "multipathtree":
 		net = MultipathTreeNet(depth=2, fanout=4,
-			bw=config["bandwidth"],
+			bw=config["bandwidthMininet"],
 			cpu=config["cpuLimit"],
 			queue=config["queue"])
 	elif topology == "fattree":
 		net = FatTreeNet(k=4,
-			bw=config["bandwidth"],
+			bw=config["bandwidthMininet"],
                         cpu=config["cpuLimit"],
                         queue=config["queue"])
 

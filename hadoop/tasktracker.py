@@ -16,7 +16,11 @@ from trace import TraceOutput
 
 TIMEOUT = 3600
 
-MININET_BW = 0.1
+MININET_BW = 1
+
+def set_mininet_bw_ratio(ratio):
+    global MININET_BW
+    MININET_BW = ratio
 
 class TaskTracker(Thread):
     def __init__(self, trace, config, maps, reduces, numTransfers):

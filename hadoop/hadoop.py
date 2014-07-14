@@ -5,7 +5,7 @@
 
 from trace import Trace
 from jobtracker import JobTracker
-from tasktracker import TaskTracker
+from tasktracker import TaskTracker, set_mininet_bw_ratio
 
 import json
 import os
@@ -18,6 +18,8 @@ class Hadoop():
         self.trace = trace
         self.conf = conf
         self.host = host
+        ratio = float(conf["bandwidthMininet"])/float(conf["bandwidthTrace"])
+        set_mininet_bw_ratio(ratio)
 
     def run(self):
         print "Hadoop: starting emulation"
