@@ -40,7 +40,7 @@ class TaskTracker(Thread):
 	        # Start Partition Listener
             partitionQueue = dict()
             for task in self.reduces:
-                partitionQueue[task.name] = Queue()
+                partitionQueue[task.name] = []
             reduceListener = ReduceListener(self.reduces, self.control, self.config, partitionQueue)
             reduceListener.start()
             
@@ -231,7 +231,9 @@ class ReduceListener(Thread):
 #            if DEBUG is True:
 #                print obj
             # TODO: a chave de ver o nome da tarefa reducer
-            self.partitionQueue[obj.reducer].put(obj)
+            self.control.cond.acquire()
+            self.partitionQueue[obj.reducer].append(obj)
+            self.control.cond.release()
             data = pickle.dumps(obj, -1)
             c.send(data)
             c.close()

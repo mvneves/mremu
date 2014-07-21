@@ -8,6 +8,7 @@ import traceback
 import socket
 import cPickle as pickle
 from subprocess import Popen
+import random
 
 TIMEOUT = 3600
 
@@ -44,7 +45,7 @@ class ReduceTask(Thread):
         for i in xrange(self.maxParallelTransfer):
             if remaining_partitions <= 0:
                 break
-            partition = self.queue.get(True)
+            partition = self.copierControl.get_partition(self.queue)
             print "ReduceTask: copy partition - " + str(partition)
             copier = ReduceCopier(partition, self.copierControl)
             copier.start()
@@ -65,11 +66,11 @@ class ReduceTask(Thread):
             for j in xrange(free_slots):
                 if remaining_partitions <= 0:
                     break
-                if self.queue.empty():
+                if not self.copierControl.has_partitions(self.queue):
                     break
                 
                 self.copierControl.cond.release()
-                partition = self.queue.get(True)
+                partition = self.copierControl.get_partition(self.queue)
                 self.copierControl.cond.acquire()
                 
                 print "Recebendo " + str(partition)
@@ -193,3 +194,28 @@ class CopierControl():
         self.finished_copier_threads += 1
         self.cond.notify()
         self.cond.release()
+
+    def get_partition(self, queue):
+        ok = False
+        while not ok:
+            self.control.cond.acquire()
+            if not queue:
+                ok = False
+                self.control.cond.release()
+                time.sleep(0.1)
+            else:
+                length = len(queue)
+                pos = random.randint(0,length-1)
+                obj = queue.pop(pos)
+                ok = True
+                self.control.cond.release()
+        return obj
+
+    def has_partitions(self, queue):
+        self.control.cond.acquire()
+        if not queue:
+            self.control.cond.release()
+            return False
+        else:
+            self.control.cond.release()
+            return True
