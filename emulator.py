@@ -17,6 +17,64 @@ import json
 
 from network import DumbbellNet, SingleSwitchNet, SinglepathTreeNet, MultipathTreeNet, FatTreeNet
 
+def RunTestHadoop(hosts):
+	basedir = "./hadoop"
+	done = "./output/done.json"
+	emulator = basedir + "/emulator.py"
+
+	if os.path.isfile(done):
+		os.remove(done)
+
+	print "Starting monitor ..."
+	output_dir="output"
+	monitor = multiprocessing.Process(target = monitor_devs_ng, args =
+                ('%s/rate.txt' % output_dir, 0.01))
+	monitor.start()
+
+	print "Running Hadoop simulation ..."
+	for h in hosts:
+		h.popen('%s %s > ./output/output-%s.txt 2> ./output/error-%s.txt' % (emulator, h.IP(), h.IP(), h.IP()), shell = True)
+	while True:
+		if os.path.isfile(done):
+			break
+		sleep(1)
+
+	print "Stopping monitor ..."
+	monitor.terminate()
+        os.system("killall -9 bwm-ng")
+
+	sleep(5)
+	print "Done."
+
+def RunTestIperf(hosts):
+	basedir = "./benchmarks"
+	done = "./output/done.json"
+	emulator = basedir + "/emulator.py"
+
+	if os.path.isfile(done):
+		os.remove(done)
+
+	print "Starting monitor ..."
+	output_dir="output"
+	monitor = multiprocessing.Process(target = monitor_devs_ng, args =
+                ('%s/rate.txt' % output_dir, 0.01))
+	monitor.start()
+
+	print "Running tests ..."
+	for h in hosts:
+		h.popen('%s %s > ./output/output-%s.txt 2> ./output/error-%s.txt' % (emulator, h.IP(), h.IP(), h.IP()), shell = True)
+	while True:
+		if os.path.isfile(done):
+			break
+		sleep(1)
+
+	print "Stopping monitor ..."
+	monitor.terminate()
+        os.system("killall -9 bwm-ng")
+
+	sleep(5)
+	print "Done."
+
 def RunTest(net=None, remoteController=False):
 	net.start()
 
@@ -37,32 +95,8 @@ def RunTest(net=None, remoteController=False):
 
 	#CLI(net)
 
-	basedir = "./hadoop"
-	done = basedir + "/done.json"
-	emulator = basedir + "/emulator.py"
-
-	if os.path.isfile(done):
-		os.remove(done)
-
-	print "Starting monitor ..."
-	output_dir="output"
-	monitor = multiprocessing.Process(target = monitor_devs_ng, args =
-                ('%s/rate.txt' % output_dir, 0.01))
-	monitor.start()
-
-	print "Running Hadoop simulation ..."
-	for h in hosts:
-		h.popen('%s %s > output-%s.txt 2> error-%s.txt' % (emulator, h.IP(), h.IP(), h.IP()), shell = True)
-	while True:
-		if os.path.isfile(done):
-			break
-		sleep(1)
-	
-	print "Stopping monitor ..."
-	monitor.terminate()
-
-	sleep(5)
-	print "Done."
+        RunTestHadoop(hosts)
+        #RunTestIperf(hosts)
 
 	#CLI(net)
 	net.stop()

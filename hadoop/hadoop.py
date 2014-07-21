@@ -92,7 +92,7 @@ class Hadoop():
             "timeTrace": traceTime,
             "timeMininet": output["finishTime"] - output["startTime"]
         }
-        outfile = open("./hadoop/done.json", 'w')
+        outfile = open("./output/done.json", 'w')
         json.dump(result, outfile, indent=4, sort_keys=True)
         outfile.close()
 

@@ -20,7 +20,7 @@ then
     sudo kill -9 $x
 fi
 
-x=`ps auxf | grep iperf | sed '/grep/d' | awk '{print $2}'`
+x=`ps auxf | grep iperf | sed '/grep/d' | sed '/geany/d' | awk '{print $2}'`
 if [ ! -z "$x" ]
 then
     sudo kill -9 $x
@@ -38,10 +38,6 @@ then
     sudo kill -9 $x
 fi
 
-
-rm error-*.txt -f
-rm output-*.txt -f
-rm monitor-*.txt -f
 rm ./hadoop/logs/hadoop-*.log -f
 rm ./hadoop/logs/simulator-*.log -f
 rm ./hadoop/tmp/* -f
