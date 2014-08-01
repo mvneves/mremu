@@ -68,7 +68,7 @@ class ReduceTask(Thread):
                     print "Recebendo " + str(partition)
                     copier = ReduceCopier(partition, self.copierControl)
                     copier.start()
-                    threads.append(copier)q
+                    threads.append(copier)
                     remaining_partitions -= 1
                     free_slots -= 1
                     print "COPIEI %d PARTICOES DE %d NO TOTAL" % (self.num_partitions-remaining_partitions,self.num_partitions)
