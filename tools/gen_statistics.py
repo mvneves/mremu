@@ -13,6 +13,8 @@ json_file = open(job_file)
 data = json.load(json_file)
 json_file.close()
 
+if "transfers" not in data.keys():
+    data["transfers"] = data["transfersReducer"]
 
 stats = {
     "jobCompletionTime" : float(data["finishTime"]-data["startTime"]),
