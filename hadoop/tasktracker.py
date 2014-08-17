@@ -116,9 +116,9 @@ class TaskTracker(Thread):
             s = socket.socket()
             host = self.config.jobTracker
             port = JOBTRACKER_PORT
-            print "TaskTracker: %s is sending finish to %s:%d" % (self.config.host, host, port)
+            print "TaskTracker: %s is sending ready to %s:%d" % (self.config.host, host, port)
             s.connect((host, port))
-            data = "finish"
+            data = "ready"
             s.send(data)
             data = s.recv(1024)
             s.close()
