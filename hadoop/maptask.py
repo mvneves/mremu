@@ -17,6 +17,7 @@ class MapTask(Thread):
 
     def run(self):
         print "MapTask: starting (%s)" % self.task.name
+        time.sleep(self.task.waitTime)
         self.control.start_map_task(self.task)
         
         # Sleep to simulate the tasks exectution time

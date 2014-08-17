@@ -3,6 +3,7 @@
 import os
 import json
 import re
+import copy
 
 class Trace(object):
     trace_file = None
@@ -66,17 +67,16 @@ class Trace(object):
     def _load(self):
         self._load_trace()
         self._load_hostmap()
+        if "transfers" not in self.trace.keys():
+            self.trace["transfers"] = self.trace["transfersReducer"]
         self._translate_hostnames()
        
     def _read_tasks(self):
         del self.maps[:]
         del self.reduces[:]
-        tasks = sorted(self.trace["tasks"],key=lambda x:x['name'])
+        tasks = sorted(self.trace["tasks"],key=lambda x:x['startTime'])
         for task in tasks:
-            if task["type"] == "MAP":
-                duration = (float(task["finishTime"])-float(task["startTime"]))
-                self.maps.append(Map(task["name"], task["host"], duration))
-            elif task["type"] == "REDUCE":
+            if task["type"] == "REDUCE":
                 duration = float(task["sortingTime"])+float(task["processingTime"])
                 t = Reduce(task["name"], task["host"], duration, float(task["waitingTime"]))
                 t.sortingTime = float(task["sortingTime"])
@@ -86,21 +86,167 @@ class Trace(object):
                 t.mergingTime = float(task["shuffleFinished"]) - lastTransfer
                 self.reduces.append(t)
             self.task2host[task["name"]] = task["host"]
+
+        hosts = set([x["host"] for x in self.trace["tasks"] if x["type"] == "MAP"])
+        for host in hosts:
+            mappers = [x for x in self.trace["tasks"] if x["type"] == "MAP" and x["host"] == host]
+            tasks = self.computeMapperWaitTime(mappers, int(self.trace["config"]["numMapSlots"]))
+            for task in tasks:
+                duration = (float(task["finishTime"])-float(task["startTime"]))
+                m = Map(task["name"], task["host"], duration)
+                m.waitTime = task["waitTime"]
+                self.maps.append(m)
+
         return (self.maps, self.reduces)
 
     def _read_transfers(self):
+        transfers = sorted(self.trace["transfers"],key=lambda x:x['startTime'])
         for task in self.maps:
-            for transfer in self.trace["transfers"]:
+            for transfer in transfers:
                 if transfer["dstPort"] != 0 and transfer["mapper"] == task.name:
                     partition = DataPartition(transfer["mapper"], transfer["reducer"], 
                         self.task2host[transfer["mapper"]], transfer["srcPort"], self.task2host[transfer["reducer"]], transfer["dstPort"], transfer["size"])
                     task.addPartition(partition)
         for task in self.reduces:
-            for transfer in self.trace["transfers"]:
-                if transfer["dstPort"] != 0 and transfer["reducer"] == task.name:
-                    partition = DataPartition(transfer["mapper"], transfer["reducer"], 
-                        self.task2host[transfer["mapper"]], transfer["srcPort"], self.task2host[transfer["reducer"]], transfer["dstPort"], transfer["size"])
-                    task.addPartition(partition)
+            copia = copy.deepcopy(self.trace["transfers"])
+            transfersReducer = [x for x in copia if x["reducer"] == task.name]
+            result = self.computeTransfersWaitTime(transfersReducer, int(self.trace["config"]["maxParallelCopies"]))
+            delay = 0.1
+            startTime = result[0]["startTime"] - delay
+            for transfer in result:
+            #for transfer in transfersReducer:
+                partition = DataPartition(transfer["mapper"], transfer["reducer"], 
+                    self.task2host[transfer["mapper"]], transfer["srcPort"], self.task2host[transfer["reducer"]], transfer["dstPort"], transfer["size"])
+                task.addPartition(partition)
+                partition.waitTime = float(transfer["waitTime"])
+                partition.eventArrival = float(transfer["eventArrival"]-delay-startTime)
+                print partition
+
+    def computeMapperWaitTime(self, mappers, taskSlots):
+        tasks = sorted(mappers,key=lambda x:x['startTime'])[:]
+        active = []
+        old = []
+        for i in range(0, len(tasks)):
+            try:
+                cur = tasks[0]
+            except:
+                break
+
+            found = False
+            active = sorted(active,key=lambda x:x['finishTime'])
+            for j in range(0, len(active)):
+                diff = cur["startTime"] - active[j]["finishTime"]
+                print diff, active[j]["name"]
+                if diff > 0 or abs(diff) < 0.001:
+                    print diff,cur["name"]," <<<"
+                    old.append(active[j])
+                    active[j] = tasks.pop(0)
+                    active[j]["waitTime"] = abs(diff)
+                    found = True
+                    break
+
+            if not found and len(active) < taskSlots:
+                tasks[0]["waitTime"] = 0
+                active.append(tasks.pop(0))
+
+        for t in active:
+            old.append(t)
+
+        old = sorted(old,key=lambda x:x['startTime'])
+        #for t in old:
+        #    print t["startTime"],t["name"], "%f" % t["waitTime"], t['host']
+        return old
+
+    def computeTransfersWaitTime(self, transfersReducer, maxParallelTransfers):
+        transfers = sorted(transfersReducer,key=lambda x:x['startTime'])[:]
+        active = []
+        old = []
+        last = None
+        startTime = transfers[0]["startTime"]
+        eventArrival = transfers[0]["startTime"]
+        for i in range(0, len(transfers)):
+            try:
+                cur = transfers[0]
+                cur["eventArrival"] = eventArrival
+            except:
+                break
+
+            found = False
+            active = sorted(active,key=lambda x:x['finishTime'])
+            active_copy = copy.deepcopy(active)
+            #print "LANNNN=",len(active)
+            for a in active_copy:
+                diff = cur["startTime"] - a["finishTime"]
+                #print diff, a["mapper"]
+                if diff > 0 or abs(diff) < 0.001:
+                    #print diff,a["mapper"]," >>>"
+                    old.append(a)
+                    active.remove(a)
+                    if not found:
+                        #print diff,cur["mapper"]," <<<"
+                        t = transfers.pop(0)
+                        if diff < 0:
+                            diff = 0
+                        t["waitTime"] = diff
+                        active.append(t)
+                        found = True
+                        if diff > 0.2:
+                            #print "FFFFFFFFFFFFFFFFFFF",cur["mapper"],diff
+                            eventArrival = cur["startTime"]
+                            cur["eventArrival"] = eventArrival
+                    last = a
+
+            if not found and len(active) < maxParallelTransfers:
+                if last:
+                    diff = cur["startTime"] - last["finishTime"]
+                    #print diff,cur["mapper"]," <<<"
+                else:
+                    diff = 0
+                transfers[0]["waitTime"] = diff
+                active.append(transfers.pop(0))
+
+        for t in active:
+            old.append(t)
+
+        old = sorted(old,key=lambda x:x['startTime'])
+        #for t in old:
+        #    print t["startTime"],t["mapper"], "%f" % t["waitTime"], t['srcAddress'], "%f" % (t["eventArrival"]-startTime)
+        return old
+
+    def computeTransfersWaitTime2(self, transfersReducer, maxParallelTransfers):
+        transfers = sorted(transfersReducer,key=lambda x:x['startTime'])[:]
+        active = []
+        old = []
+        for i in range(0, len(transfers)):
+            try:
+                cur = transfers[0]
+            except:
+                break
+
+            found = False
+            active = sorted(active,key=lambda x:x['finishTime'])
+            for j in range(0, len(active)):
+                diff = cur["startTime"] - active[j]["finishTime"]
+                #print diff, active[j]["mapper"]
+                if diff > 0 or abs(diff) < 0.001:
+                    #print diff,cur["mapper"]," <<<"
+                    old.append(active[j])
+                    active[j] = transfers.pop(0)
+                    active[j]["waitTime"] = abs(diff)
+                    found = True
+                    break
+
+            if not found and len(active) < maxParallelTransfers:
+                transfers[0]["waitTime"] = 0
+                active.append(transfers.pop(0))
+
+        for t in active:
+            old.append(t)
+
+        old = sorted(old,key=lambda x:x['startTime'])
+        #for t in old:
+        #    print t["startTime"],t["mapper"], "%f" % t["waitTime"], t['srcAddress']
+        return old
 
     def getInitialDelayJob(self):
         return float(self.trace["startTime"]) - float(self.trace["submitTime"])
@@ -273,6 +419,7 @@ class Map(Task):
     
     def __init__(self, name, host, duration):
         super(Map, self).__init__(name, "MAP", host, duration)
+        self.waitTime = 0
 
 class Reduce(Task):
     
@@ -303,6 +450,8 @@ class DataPartition(object):
         self.duration = 0
         self.startTime = 0
         self.finishTime = 0
+        self.waitTime = 0
+        self.eventArrival = 0
 
     def __str__(self):
         return "Partition: mapper=%s (%s:%d), reducer=%s (%s:%d), size=%d" % (self.mapper, 
