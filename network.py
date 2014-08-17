@@ -83,7 +83,8 @@ def RegularTreeNet(depth=2, fanout=4, bw=BW, cpu=-1, queue=100):
 def SingleSwitchNet(numHosts=16, bw=BW, cpu=-1, queue=100, remoteController=False):
     "Create an empty network and add nodes to it."
     host = custom(CPULimitedHost, cpu=cpu)
-    link = custom(TCLink, bw=bw, max_queue_size=queue)
+    #link = custom(TCLink, bw=bw, max_queue_size=queue, delay="1ms")
+    link = custom(TCLink, bw=bw)
     if remoteController is True:
         controller = RemoteController
     else:
@@ -314,6 +315,85 @@ def DumbbellNet(numSwitches=2, numHostsPerSwitch=8, L=1, bw=BW, cpu=-1, queue=10
                 else:
                     bandwidth=bw
                 bandwidth=bw
+                i = i + 1
+                link = custom(TCLink, bw=bandwidth, max_queue_size=queue)
+                linkObj = net.addLink(last, switch, cls=link)
+                print "link=" + str(linkObj)
+        last = switch
+
+    info('*** Creating links to hosts\n')
+    # Creating links to hosts
+    for n in irange(0, numSwitches-1):
+        switch = switches[n]
+        for host in allHosts[n]:
+            print "linking %s to %s" % (host.name, switch.name)
+            net.addLink(host, switch)
+            print ""
+
+    return net
+
+def ShamrockNet(numSwitches=2, numHostsFirstSwitch=12, numHostsSecondSwitch=4, L=1, bw=BW, cpu=-1, queue=100, remoteController=True):
+    "Create an empty network and add nodes to it."
+    host = custom(CPULimitedHost, cpu=cpu)
+    link = custom(TCLink, bw=bw, max_queue_size=queue)
+    if remoteController is True:
+        controller=RemoteController
+    else:
+        controller=OVSController
+    net = Mininet(host=host, link=link, switch=OVSKernelSwitch, controller=controller, autoSetMacs=True, autoStaticArp=False)
+
+    info('*** Adding controller\n')
+    if remoteController is True:
+        net.addController('c0', ip='172.16.2.1', port=6633)
+    else:
+       net.addController('c0')
+
+    info('*** Adding hosts\n')
+    switches = []
+    allHosts = []
+    numSwitches = 2
+    i = 1
+
+    # Adding hosts
+    n = "1"
+    hosts = []
+    for m in irange(1, numHostsFirstSwitch):
+        print "s%sh%s" % (n, m)
+        host = net.addHost("s%sh%s" % (n, m), ip=("10.0.0.%s" % str(i)))
+        i = i + 1
+        hosts.append(host)
+    allHosts.append(hosts)
+
+    n = "2"
+    hosts = []
+    for m in irange(1, numHostsSecondSwitch):
+        print "s%sh%s" % (n, m)
+        host = net.addHost("s%sh%s" % (n, m), ip=("10.0.0.%s" % str(i)))
+        i = i + 1
+        hosts.append(host)
+    allHosts.append(hosts)
+
+    info('*** Adding switches\n')
+    # Adding switches
+    for n in irange(1, numSwitches):
+       print "s%s" % n
+       switch = net.addSwitch("s%s" % n)
+       switches.append(switch)
+
+    info('*** Wiring up switches\n')
+    # Wiring up switches
+    i = 1
+    last = None
+    for switch in switches:
+        if last:
+            for l in irange(1, L):
+#               print "linking %s to %s" % (last.name, switch.name)
+#                if i == 1:
+#                    bandwidth=10
+#                else:
+#                    bandwidth=bw
+                #bandwidth=bw
+                bandwidth=1000
                 i = i + 1
                 link = custom(TCLink, bw=bandwidth, max_queue_size=queue)
                 linkObj = net.addLink(last, switch, cls=link)

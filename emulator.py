@@ -15,7 +15,7 @@ import os
 import sys
 import json
 
-from network import DumbbellNet, SingleSwitchNet, SinglepathTreeNet, MultipathTreeNet, FatTreeNet
+from network import DumbbellNet, SingleSwitchNet, SinglepathTreeNet, MultipathTreeNet, FatTreeNet, Shamrock
 
 def RunTestHadoop(hosts):
 	basedir = "./hadoop"
@@ -115,6 +115,7 @@ if __name__ == '__main__':
 		net = SingleSwitchNet(numHosts=config["numHostsPerSwitch"],
 			bw=config["bandwidthMininet"],
 			cpu=config["cpuLimit"],
+                        #cpu=0.05,
 			queue=config["queue"],
 			remoteController=config["remoteController"])
 	elif topology == "dumbbell":
@@ -141,6 +142,11 @@ if __name__ == '__main__':
 			bw=config["bandwidthMininet"],
                         cpu=config["cpuLimit"],
                         queue=config["queue"])
+	elif topology == "shamrock":
+		net = ShamrockNet(bw=config["bandwidthMininet"],
+                        cpu=config["cpuLimit"],
+                        queue=config["queue"],
+                        remoteController=config["remoteController"])
 
 	RunTest(net=net, remoteController=config["remoteController"])
 
