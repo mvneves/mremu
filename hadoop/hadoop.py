@@ -39,6 +39,7 @@ class Hadoop():
 
         # start job
         if config.jobTracker == self.host:
+            jobTracker.waitTaskTrackers()
             jobTracker.startJob()
                         
         # wait for the remote task Tracker to finish

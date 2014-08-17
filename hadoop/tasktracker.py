@@ -34,6 +34,9 @@ class TaskTracker(Thread):
         self.control = Control(self.logger)
 
     def run(self):
+        ok = False
+        while not ok:
+            ok = self.ready()
         self.waitForJobTracker()
         
         if len(self.reduces) > 0:
@@ -107,6 +110,22 @@ class TaskTracker(Thread):
         data = s.recv(1024)
         print "TaskTracker: %s received %s from %s:%d" % (self.config.host, str(data), host, port)
         s.close()
+
+    def ready(self):
+        try:
+            s = socket.socket()
+            host = self.config.jobTracker
+            port = JOBTRACKER_PORT
+            print "TaskTracker: %s is sending finish to %s:%d" % (self.config.host, host, port)
+            s.connect((host, port))
+            data = "finish"
+            s.send(data)
+            data = s.recv(1024)
+            s.close()
+            print "TaskTracker: %s received %s from %s:%d" % (self.config.host, str(data), host, port)
+            return True
+        except:
+            return False
 
 class MapTaskLauncher(Thread):
     def __init__(self, tasks, control, config, delay):
