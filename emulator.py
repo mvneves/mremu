@@ -15,7 +15,7 @@ import os
 import sys
 import json
 
-from network import DumbbellNet, SingleSwitchNet, SinglepathTreeNet, MultipathTreeNet, FatTreeNet, Shamrock
+from network import DumbbellNet, SingleSwitchNet, SinglepathTreeNet, MultipathTreeNet, FatTreeNet, ShamrockNet
 
 def RunTestHadoop(hosts):
 	basedir = "./hadoop"
