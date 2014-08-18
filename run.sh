@@ -19,6 +19,7 @@ mkdir /tmp/iperf
 
 # run emulations
 sudo python emulator.py
+cat output/done.json
 sleep 2
 
 # save history
