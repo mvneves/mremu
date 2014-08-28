@@ -4,6 +4,7 @@ import os
 import json
 import re
 import copy
+from config import get_operation_mode, REPLAY_MODE, HADOOP_MODE
 
 class Trace(object):
     trace_file = None
@@ -63,12 +64,29 @@ class Trace(object):
                     transfer["dstAddress"] = None
                 else:
                     transfer["dstAddress"] = self.hostmap[transfer["dstAddress"]]
+            if self.trace["transfers"] != self.trace["transfersReducer"]:
+                for transfer in self.trace["transfersReducer"]:
+                    transfer["srcAddress"] = self.hostmap[transfer["srcAddress"]]
+                    if transfer["dstAddress"] == "null":
+                        transfer["dstAddress"] = None
+                    else:
+                        transfer["dstAddress"] = self.hostmap[transfer["dstAddress"]]
+            for transfer in self.trace["transfersMapper"]:
+                transfer["srcAddress"] = self.hostmap[transfer["srcAddress"]]
+                if transfer["dstAddress"] == "null":
+                    transfer["dstAddress"] = None
+                else:
+                    transfer["dstAddress"] = self.hostmap[transfer["dstAddress"]]
         
     def _load(self):
         self._load_trace()
         self._load_hostmap()
         if "transfers" not in self.trace.keys():
             self.trace["transfers"] = self.trace["transfersReducer"]
+        if "transfersReducer" not in self.trace.keys():
+            self.trace["transfersReducer"] = self.trace["transfers"]
+        if "transfersMapper" not in self.trace.keys():
+            self.trace["transfersMapper"] = self.trace["transfers"]
         self._translate_hostnames()
        
     def _read_tasks(self):
@@ -100,12 +118,23 @@ class Trace(object):
         return (self.maps, self.reduces)
 
     def _read_transfers(self):
+        mode = get_operation_mode()
+        if mode == REPLAY_MODE:
+            self.trace["transfers"] = self.trace["transfersMapper"]
+        else:
+            self.trace["transfers"] = self.computeTransferTimes()
         transfers = sorted(self.trace["transfers"],key=lambda x:x['startTime'])
         for task in self.maps:
             for transfer in transfers:
                 if transfer["dstPort"] != 0 and transfer["mapper"] == task.name:
                     partition = DataPartition(transfer["mapper"], transfer["reducer"], 
                         self.task2host[transfer["mapper"]], transfer["srcPort"], self.task2host[transfer["reducer"]], transfer["dstPort"], transfer["size"])
+                    if mode == REPLAY_MODE:
+                        partition.initTime = 0
+                        partition.postTime = 0
+                    else:
+                        partition.initTime = float(transfer["initTime"])
+                        partition.postTime = float(transfer["postTime"])
                     task.addPartition(partition)
         for task in self.reduces:
             copia = copy.deepcopy(self.trace["transfers"])
@@ -114,13 +143,40 @@ class Trace(object):
             delay = 0.1
             startTime = result[0]["startTime"] - delay
             for transfer in result:
-            #for transfer in transfersReducer:
                 partition = DataPartition(transfer["mapper"], transfer["reducer"], 
                     self.task2host[transfer["mapper"]], transfer["srcPort"], self.task2host[transfer["reducer"]], transfer["dstPort"], transfer["size"])
                 task.addPartition(partition)
                 partition.waitTime = float(transfer["waitTime"])
                 partition.eventArrival = float(transfer["eventArrival"]-delay-startTime)
-                print partition
+                if mode == REPLAY_MODE:
+                    partition.initTime = 0
+                    partition.postTime = 0
+                else:
+                    partition.initTime = float(transfer["initTime"])
+                    partition.postTime = float(transfer["postTime"])
+                #print partition
+
+    def computeTransferTimes(self):
+        transfers = []
+        actualTransfers = dict()
+
+        for t in self.trace["transfersMapper"]:
+            key = t["mapper"]+"-"+t["reducer"]
+            actualTransfers[key] = t
+
+        for t in self.trace["transfersReducer"]:
+            key = t["mapper"]+"-"+t["reducer"]
+            diff = actualTransfers[key]["startTime"]-t["startTime"]
+            if diff < 0:
+                diff = 0
+            actualTransfers[key]["initTime"] = diff
+            diff = t["finishTime"]-actualTransfers[key]["finishTime"]
+            if diff < 0:
+                diff = 0
+            actualTransfers[key]["postTime"] = diff
+            transfers.append(actualTransfers[key])
+
+        return transfers
 
     def computeMapperWaitTime(self, mappers, taskSlots):
         tasks = sorted(mappers,key=lambda x:x['startTime'])[:]
@@ -136,9 +192,9 @@ class Trace(object):
             active = sorted(active,key=lambda x:x['finishTime'])
             for j in range(0, len(active)):
                 diff = cur["startTime"] - active[j]["finishTime"]
-                print diff, active[j]["name"]
+                #print diff, active[j]["name"]
                 if diff > 0 or abs(diff) < 0.001:
-                    print diff,cur["name"]," <<<"
+                    #print diff,cur["name"]," <<<"
                     old.append(active[j])
                     active[j] = tasks.pop(0)
                     active[j]["waitTime"] = abs(diff)
@@ -174,7 +230,6 @@ class Trace(object):
             found = False
             active = sorted(active,key=lambda x:x['finishTime'])
             active_copy = copy.deepcopy(active)
-            #print "LANNNN=",len(active)
             for a in active_copy:
                 diff = cur["startTime"] - a["finishTime"]
                 #print diff, a["mapper"]
@@ -191,7 +246,6 @@ class Trace(object):
                         active.append(t)
                         found = True
                         if diff > 0.2:
-                            #print "FFFFFFFFFFFFFFFFFFF",cur["mapper"],diff
                             eventArrival = cur["startTime"]
                             cur["eventArrival"] = eventArrival
                     last = a
@@ -452,6 +506,8 @@ class DataPartition(object):
         self.finishTime = 0
         self.waitTime = 0
         self.eventArrival = 0
+        self.initTime = 0
+        self.postTime = 0
 
     def __str__(self):
         return "Partition: mapper=%s (%s:%d), reducer=%s (%s:%d), size=%d" % (self.mapper, 

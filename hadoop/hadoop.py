@@ -5,13 +5,17 @@
 
 from trace import Trace
 from jobtracker import JobTracker
-from tasktracker import TaskTracker, set_mininet_bw_ratio
+from tasktracker import TaskTracker
+from config import set_mininet_bw_ratio, set_operation_mode, REPLAY_MODE, HADOOP_MODE
 
 import json
 import os
 import sys
 import time
 import re
+
+# Operation mode
+mode = HADOOP_MODE
 
 class Hadoop():
     def __init__(self, trace, conf, host):
@@ -111,6 +115,8 @@ if __name__ == "__main__":
     json_file.close()
     print conf
     
+    set_operation_mode(mode)
+
     # load trace file
     trace = Trace(conf["trace"], conf["mapping"], host)
 

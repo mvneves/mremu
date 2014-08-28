@@ -3,6 +3,7 @@
 from threading import Thread, Condition, Lock
 from logger import HadoopLogger
 from comm import JOBTRACKER_PORT, TASKTRACKER_PORT, REDUCELISTENER_PORT, SHUFFLESERVER_PORT
+from config import get_mininet_bw_ratio
 from maptask import MapTask
 from reducetask import ReduceTask
 import time
@@ -16,11 +17,7 @@ from trace import TraceOutput
 
 TIMEOUT = 3600
 
-MININET_BW = 1
 
-def set_mininet_bw_ratio(ratio):
-    global MININET_BW
-    MININET_BW = ratio
 
 class TaskTracker(Thread):
     def __init__(self, trace, config, maps, reduces, numTransfers):
@@ -306,7 +303,7 @@ class MapOutputServlet(Thread):
 
     def run(self):
         print "MapOutputServlet: starting iperf client"
-        size = self.partition.size * MININET_BW
+        size = self.partition.size * get_mininet_bw_ratio()
         #size = 64
         cmd = "./trafficgen/iperf-client %s %s %d %d" % (self.partition.srcAddress, self.partition.dstAddress, self.partition.dstPort, size)
         print "MapOutputServlet: run %s" % cmd

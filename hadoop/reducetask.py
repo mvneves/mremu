@@ -1,6 +1,7 @@
 # vim: tabstop=8 expandtab shiftwidth=4 softtabstop=4
 
 from comm import SHUFFLESERVER_PORT
+from config import get_operation_mode, REPLAY_MODE, HADOOP_MODE
 from threading import Thread, Condition, Lock
 import time
 import sys
@@ -28,6 +29,8 @@ class ReduceTask(Thread):
         self.copierControl = CopierControl(control)
         self.num_partitions = len(self.task.partitions)
         self.maxParallelTransfer = maxParallelTransfer
+        self.maxInFlight = 4 * self.maxParallelTransfer
+        self.numEventsFetched = 0
 
     def run(self):
         print "ReduceTask: starting (%s)" % self.task.name
@@ -37,8 +40,13 @@ class ReduceTask(Thread):
         time.sleep(self.task.initialDelay)
         self.task.waitFinished = time.time()
 
-        #self.scheduleTransfers()
-        self.scheduleTransfersFromTraces()
+        mode = get_operation_mode()
+        if mode == REPLAY_MODE:
+            # Replay execution from original traces
+            self.scheduleTransfersFromTraces()
+        else:
+            # Hadoop Emulation
+            self.fetchOutpus()
 
         time.sleep(self.task.mergingTime)
         self.task.shuffleFinished = time.time()
@@ -52,60 +60,100 @@ class ReduceTask(Thread):
 
         print "ReduceTask: finished (%s)" % self.task.name
 
-    def scheduleTransfers(self):
+    def fetchOutpus(self):
         threads = []
         self.copierControl.cond.acquire()
 
-        mapLocations = {}
         remaining_partitions = self.num_partitions
         free_slots = self.maxParallelTransfer
         start_time = time.time()
         numScheduled = 0
-        numEventsFetched = 0
         mapList = []
+
+        for x in range(0, self.maxParallelTransfer):
+            copier = MapOutputCopier(self.num_partitions, self.copierControl)
+            copier.start()
+            threads.append(copier)
+
+        numInFlight = 0
+        self.mapLocations = []
+        uniqueHosts = []
+        numEventsAtStartOfScheduling = 0
 
         while remaining_partitions > 0 and (time.time() - start_time < TIMEOUT):
 
-            self.copierControl.cond.release()
-            if numEventsFetched < self.num_partitions:
-                numEventsFetched = self.copierControl.get_pending_partitions(self.queue, mapLocations, numEventsFetched)
-            self.copierControl.cond.acquire()
+            numDups = 0
+            numScheduled = 0
+
+            self.numEventsFetched = self.copierControl.getMapCompletionEvents(self.queue, self.mapLocations, self.numEventsFetched)
+            numEventsAtStartOfScheduling = self.numEventsFetched
 
             # get host list
-            hostList = mapLocations.keys()
+            hostList = list(set([p.srcAddress for p in self.mapLocations]))
 
             # randomize host list
             # Hadoop does it to prevent all reduce-tasks swamping the same tasktracker.
             random.shuffle(hostList)
 
-            free_slots = self.maxParallelTransfer - self.copierControl.active_copier_threads
-
-            # schedule copiers per host
             for host in hostList:
-                if not mapLocations[host]:
+                knownOutputsByLoc = [p for p in self.mapLocations if p.srcAddress == host]
+
+                if not knownOutputsByLoc:
                     continue
-                # get one map output per host
-                partition = mapLocations[host].pop(0)
 
-                while free_slots < 1:
-                    self.copierControl.cond.wait(3)
-                    free_slots = self.maxParallelTransfer - self.copierControl.active_copier_threads
+                if host in uniqueHosts:
+                    numDups += len(knownOutputsByLoc)
+                    continue
 
-                #print "free_slots=%d, active_copier_threads=%d, maxParallelTransfer=%d" % (free_slots, self.copierControl.active_copier_threads, self.maxParallelTransfer)
-                print "Recebendo " + str(partition)
-                copier = ReduceCopier(partition, self.copierControl)
-                copier.start()
-                threads.append(copier)
-                remaining_partitions -= 1
-                free_slots -= 1
-                print "COPIEI %d PARTICOES DE %d NO TOTAL" % (self.num_partitions-remaining_partitions,self.num_partitions)
-            mapList = []
+                for loc in knownOutputsByLoc:
+                    uniqueHosts.append(host);
+                    self.copierControl.scheduledCopies.append(loc)
+                    self.copierControl.numScheduled += 1
+                    self.mapLocations.remove(loc);
+                    numInFlight += 1
+                    numScheduled += 1
+                    remaining_partitions -= 1
+                    break; # we have a map from this host
+
+            self.copierControl.cond.notifyAll()
+            if numScheduled > 0:
+                #LOG.info(reduceTask.getTaskID() + " Scheduled " + numScheduled + " outputs (" + penaltyBox.size() + " slow hosts and" + numDups + " dup hosts)");
+                print " Scheduled", numScheduled, "outputs ( 0 slow hosts and", numDups, "dup hosts)"
+
+            while numInFlight > 0:
+                cr = self.getCopyResult(numInFlight, numEventsAtStartOfScheduling)
+                if not cr:
+                    # we should go and get more mapcompletion events from the tasktracker
+                    break
+                uniqueHosts.remove(cr.srcAddress)
+                numInFlight -= 1
 
         self.copierControl.cond.release()
 
         # Wait for all of them to finish
         [x.join() for x in threads]
 
+    def getCopyResult(self, numInFlight, numEventsAtStartOfScheduling):
+        waitedForNewEvents = False
+
+        while not self.copierControl.copyResults:
+            self.numEventsFetched = self.copierControl.getMapCompletionEvents(self.queue, self.mapLocations, self.numEventsFetched)
+            if self.busyEnough(numInFlight):
+                # All of the fetcher threads are busy. So, no sense trying
+                # to schedule more until one finishes.
+                self.copierControl.cond.wait(2)
+            elif self.numEventsFetched == numEventsAtStartOfScheduling and not waitedForNewEvents:
+                # no sense trying to schedule more, since there are no
+                # new events to even try to schedule.
+                waitedForNewEvents = True
+                self.copierControl.cond.wait(2)
+            else:
+                return None
+
+        return self.copierControl.copyResults.pop(0)
+
+    def busyEnough(self, numInFlight):
+        return numInFlight > self.maxInFlight
 
     def scheduleTransfersFromTraces(self):
         threads = []
@@ -119,6 +167,11 @@ class ReduceTask(Thread):
         numEventsFetched = 0
         mapList = []
 
+        for x in range(0, self.maxParallelTransfer):
+            copier = MapOutputCopier(self.num_partitions, self.copierControl)
+            copier.start()
+            threads.append(copier)
+
         while remaining_partitions > 0 and (time.time() - start_time < TIMEOUT):
 
             self.copierControl.cond.release()
@@ -126,21 +179,12 @@ class ReduceTask(Thread):
                 numEventsFetched = self.copierControl.get_pending_partitions_trace(self.task, mapList, numEventsFetched, start_time)
             self.copierControl.cond.acquire()
 
-            free_slots = self.maxParallelTransfer - self.copierControl.active_copier_threads
-
             for partition in mapList:
-
-                while free_slots < 1:
-                    self.copierControl.cond.wait(3)
-                    free_slots = self.maxParallelTransfer - self.copierControl.active_copier_threads
-
-                #print "free_slots=%d, active_copier_threads=%d, maxParallelTransfer=%d" % (free_slots, self.copierControl.active_copier_threads, self.maxParallelTransfer)
                 print "Recebendo " + str(partition)
-                copier = ReduceCopier(partition, self.copierControl)
-                copier.start()
-                threads.append(copier)
+                self.copierControl.scheduledCopies.append(partition)
+                self.copierControl.numScheduled += 1
                 remaining_partitions -= 1
-                free_slots -= 1
+                self.copierControl.cond.notifyAll()
                 print "COPIEI %d PARTICOES DE %d NO TOTAL" % (self.num_partitions-remaining_partitions,self.num_partitions)
             mapList = []
 
@@ -149,65 +193,99 @@ class ReduceTask(Thread):
         # Wait for all of them to finish
         [x.join() for x in threads]
 
-class ReduceCopier(Thread):
+class MapOutputCopier(Thread):
     """
     Copy a partition from the map output data of a given map task.
     """
 
-    def __init__(self, partition, copierControl):
+    def __init__(self, numCopies, copierControl):
         Thread.__init__(self)
-        self.partition = partition
+        self.numCopies = numCopies
         self.copierControl = copierControl
 
     def run(self):
+        start_time = time.time()
+
+        while time.time() - start_time < TIMEOUT:
+
+            print "MapOutputCopier: waiting for new scheduled copies"
+            self.copierControl.cond.acquire()
+            try:
+                partition = self.copierControl.scheduledCopies.pop(0)
+            except:
+                if self.copierControl.numScheduled >= self.numCopies:
+                    self.copierControl.cond.release()
+                    break
+                self.copierControl.cond.wait()
+                self.copierControl.cond.release()
+                continue
+            self.copierControl.cond.release()
+
+            print "MapOutputCopier: calling copyOutput()"
+            self.copyOutput(partition)
+
+            self.copierControl.cond.acquire()
+            self.copierControl.copyResults.append(partition)
+            self.copierControl.cond.notifyAll()
+            self.copierControl.cond.release()
+
+    def copyOutput(self, partition):
         self.copierControl.start_copy()
 
-        self.partition.startTime = time.time()
-        print "ReduceCopier: copiando partitcao - %s" % str(self.partition)
+        partition.startTime = time.time()
+        print "MapOutputCopier: copiando partitcao - %s" % str(partition)
+        print "VEIGA: vou dormir por ",partition.initTime," antes de comecar a enviar"
+        mode = get_operation_mode()
+        if mode == HADOOP_MODE:
+            time.sleep(partition.initTime)
 
         self.copierControl.control.cond.acquire()
         global IPERF_PORT
         self.port = IPERF_PORT
         IPERF_PORT += 1
         self.copierControl.control.cond.release()
-        self.partition.dstPort = self.port
+        partition.dstPort = self.port
                 
-        print "ReduceCopier: starting iperf server at %s:%d" % (self.partition.dstAddress, self.partition.dstPort)
-        cmd = "./trafficgen/iperf-server %s %d" % (self.partition.dstAddress, self.partition.dstPort)
-        print "ReduceCopier: run %s" % cmd
+        print "MapOutputCopier: starting iperf server at %s:%d" % (partition.dstAddress, partition.dstPort)
+        cmd = "./trafficgen/iperf-server %s %d" % (partition.dstAddress, partition.dstPort)
+        print "MapOutputCopier: run %s" % cmd
         p = Popen(cmd, shell=True)
         
         ok = False
         while not ok:
-            ok = self.contactShuffleServer()
+            ok = self.contactShuffleServer(partition)
             if not ok:
-                time.sleep(0.1)
+                time.sleep(0.01)
 
         # Wait for the shuffle transfer to finish
         p.wait()
         
-        self.partition.finishTime = time.time()
-        self.partition.duration = self.partition.finishTime - self.partition.startTime
-        self.copierControl.control.end_shuffle(self.partition)
+        if mode == HADOOP_MODE:
+            time.sleep(partition.postTime);
+
+        partition.finishTime = time.time()
+        partition.duration = partition.finishTime - partition.startTime
+        self.copierControl.control.end_shuffle(partition)
+
+        print "MapOutputCopier: finished %s:%d" % (partition.dstAddress, partition.dstPort)
         self.copierControl.end_copy()
 
-        print "ReduceCopier: finished %s:%d" % (self.partition.dstAddress, self.partition.dstPort)
 
 
-    def contactShuffleServer(self):
+    def contactShuffleServer(self, partition):
         """Contact the shuffle server informing Do some things.
         :param verbose: Be verbose (give additional messages).
         """
         try:
             s = socket.socket()
             s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            host = self.partition.srcAddress
+            host = partition.srcAddress
             port = SHUFFLESERVER_PORT
             s.connect((host, port))
-            #print "ReduceCopier(" + name + ") got error connetion to " + host + ":" + str(port)
-            data = pickle.dumps(self.partition, -1)
+            #print "MapOutputCopier(" + name + ") got error connetion to " + host + ":" + str(port)
+            data = pickle.dumps(partition, -1)
             s.sendall(data)
-            #self.logger.info("ReduceCopier(" + self.partition.reducer + ") send to " + host + ": " + str(self.partition))
+            #self.logger.info("MapOutputCopier(" + partition.reducer + ") send to " + host + ": " + str(partition))
             data = s.recv(1024)
             s.close()
             return True
@@ -222,6 +300,9 @@ class CopierControl():
         #self.logger = logger
         self.cond = Condition(Lock())
         self.control = control
+        self.numScheduled = 0
+        self.scheduledCopies = []
+        self.copyResults = []
 
     def start_copy(self):
         #print "Starting Thread-" + task.name
@@ -264,28 +345,9 @@ class CopierControl():
             print "EVENT_ARRIVAL: ",p.mapper,p.eventArrival,elapsedTime
         return numEventsFetched
 
-    def get_pending_partitions(self, queue, mapLocations, numEventsFetched):
-        ok = False
-        while not ok:
-            self.control.cond.acquire()
-            if not queue:
-                ok = False
-                self.control.cond.release()
-                time.sleep(0.1)
-            else:
-                while queue:
-                    p = queue.pop(0)
-                    mapLocations.setdefault(p.srcAddress, []).append(p)
-                    numEventsFetched += 1
-                ok = True
-                self.control.cond.release()
+    def getMapCompletionEvents(self, queue, mapLocations, numEventsFetched):
+        while queue:
+            p = queue.pop(0)
+            mapLocations.append(p)
+            numEventsFetched += 1
         return numEventsFetched
-
-    def has_partitions(self, queue):
-        self.control.cond.acquire()
-        if not queue:
-            self.control.cond.release()
-            return False
-        else:
-            self.control.cond.release()
-            return True
