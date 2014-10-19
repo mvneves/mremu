@@ -29,13 +29,17 @@ class MapTask(Thread):
         self.writeOutputData()
 
         if len(self.task.partitions) > 0:
+            partitionLength = []
+            self.task.partitions.sort(key=lambda x: x.reducer, reverse=False)
             for partition in self.task.partitions:
+                partitionLength.append(partition.size)
                 ok = False
                 while not ok:
                     ok = self.sendPartition(partition)
                     if not ok:
                         time.sleep(0.1)
                 print "MapTask: sent partition to %s" % partition.dstAddress
+            self.control.logger.shuffle_intent(partition.mapper, partitionLength)
 
         print "MapTask: finished (%s)" % self.task.name
 

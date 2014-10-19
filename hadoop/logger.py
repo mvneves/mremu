@@ -51,6 +51,15 @@ class HadoopLogger(object):
         message = self.TASKTRACKER + ": Task " + taskID + " is done."
         self._logger.info(message)
 
+    def shuffle_intent(self, taskID, partitions):
+        # "2013-08-20 21:18:31,737 INFO org.apache.hadoop.mapred.TaskTracker: SHUFFLE_INTENT, Task: attempt_201308202026_0002_m_000003_0, partitions: [102324, 2223424, 3232323, 423323]"
+        message = self.TASKTRACKER + ": SHUFFLE_INTENT, Task: " + taskID + ", partitions: ["
+        for p in partitions:
+            message += "%d, " % p
+        message = message[:-2]
+        message += "]"
+        self._logger.info(message)
+
     def shuffle_finish(self, srcIP, srcPort, dstIP, dstPort, size, mapper, duration, reducer):
         # "2013-08-20 21:18:31,737 INFO org.apache.hadoop.mapred.TaskTracker.clienttrace: src: 172.27.102.31:50060, dest: 172.27.102.34:43726, bytes: 201113591, op: MAPRED_SHUFFLE, cliID: attempt_201308202026_0002_m_000003_0, duration: 3873490658, reducer: 1";
         message = self.CLIENTTRACE + ": src: " + srcIP + ":" + str(srcPort) + ", dest: " + dstIP + ":" + str(dstPort) + ", bytes: " + str(size)+ ", op: MAPRED_SHUFFLE, cliID: " + mapper + ", duration: " + str(duration) + ", reducer: " + str(int(reducer.split("_")[4]))
