@@ -22,6 +22,7 @@ from network import (DumbbellNet, SingleSwitchNet, SinglepathTreeNet,
 from applauncher import HadoopTest, IperfTest
 
 from nat import connectToGateway, establishRoutes, startNAT, stopNAT
+from sshd import startSSH, stopSSH
 
 def RunTest(net=None, remoteController=False, enableNAT=True):
 	mgntController, mgntSwitch = ManagementNet(net)
@@ -44,6 +45,7 @@ def RunTest(net=None, remoteController=False, enableNAT=True):
 	if enableNAT:
 		startNAT(root)
 		establishRoutes(net)
+		startSSH(net)
 
 	# wait for the switches to connect to the controller
 	info('** Waiting for switches to connect to the controller\n')
@@ -72,6 +74,7 @@ def RunTest(net=None, remoteController=False, enableNAT=True):
 
 	if enableNAT:
 		stopNAT(root)
+		stopSSH(net)
 
 	net.stop()
 
