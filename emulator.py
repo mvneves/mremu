@@ -124,6 +124,9 @@ if __name__ == '__main__':
                         cpu=config["cpuLimit"],
                         queue=config["queue"],
                         remoteController=config["remoteController"])
+	else:
+		print "Error: Unknown topology type."
+		sys.exit(1)
 
 	RunTest(net=net, remoteController=config["remoteController"])
 
