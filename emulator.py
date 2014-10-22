@@ -17,15 +17,40 @@ import sys
 import json
 
 from network import (DumbbellNet, SingleSwitchNet, SinglepathTreeNet,
-                     MultipathTreeNet, FatTreeNet, ShamrockNet)
+                     MultipathTreeNet, FatTreeNet, ShamrockNet,
+                     RegularTreeNet, ManagementNet)
 from applauncher import HadoopTest, IperfTest
 
-def RunTest(net=None, remoteController=False):
-	net.start()
+from nat import connectToGateway, establishRoutes, startNAT, stopNAT
+
+def RunTest(net=None, remoteController=False, enableNAT=True):
+	mgntController, mgntSwitch = ManagementNet(net)
+
+	if enableNAT:
+		root = connectToGateway(net, switch='mgnt0')
+
+	net.build()
+	info( '*** Starting controller\n' )
+	for controller in net.controllers:
+		controller.start()
+	info( '*** Starting %s switches\n' % len( net.switches ) )
+	for switch in net.switches:
+		info( switch.name + ' ')
+		if switch.name != "mgnt0":
+			switch.start( [net.controllers[0]])
+	mgntSwitch.start([mgntController])
+	info( '\n' )
+
+	if enableNAT:
+		startNAT(root)
+		establishRoutes(net)
 
 	# wait for the switches to connect to the controller
 	info('** Waiting for switches to connect to the controller\n')
 	sleep(5)
+	if remoteController:
+		sleep(30)
+
 	#CLI(net)
 
 	hosts = net.hosts
@@ -44,6 +69,10 @@ def RunTest(net=None, remoteController=False):
 	#IperfTest(hosts)
 
 	#CLI(net)
+
+	if enableNAT:
+		stopNAT(root)
+
 	net.stop()
 
 if __name__ == '__main__':

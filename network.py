@@ -30,6 +30,37 @@ QUEUE_SIZE = 100
 # Link capacity (Mbps)
 BW = 10 
 
+def ManagementNet(net, bw=BW, queue=100):
+    "Create an empty network and add nodes to it."
+    #link = custom(TCLink, bw=bw, max_queue_size=queue, delay="1ms")
+    link = custom(TCLink, bw=bw)
+    #if remoteController is True:
+    #    controller = RemoteController
+    #else:
+    #    controller = OVSController
+    #net = Mininet(host=host, link=link, switch=OVSKernelSwitch, controller=controller, autoSetMacs=True, autoStaticArp=False)
+
+    info('*** Adding second controller\n')
+    controller = net.addController('c1', controller=OVSController)
+
+    info('*** Adding management switch\n')
+    # Adding switches
+    print "mgnt0"
+    switch = net.addSwitch("mgnt0")
+
+    info('*** Creating links to hosts\n')
+    # Creating links to hosts
+    i = 1
+    for host in net.hosts:
+        print "linking %s to %s" % (host.name, switch.name)
+        link = net.addLink(host, switch)
+        host.setIP(("10.128.0.%s/9" % str(i)), intf=link.intf1)
+        i += 1
+        print ""
+
+    return controller, switch
+
+
 def NonBlockingNet(k=4, bw=10, cpu=-1, queue=100):
     ''' Create a NonBlocking Net '''
 
@@ -52,7 +83,7 @@ def FatTreeNet(k=4, bw=10, cpu=-1, queue=100):
     link = custom(TCLink, bw=bw, max_queue_size=queue)
 
     net = Mininet(topo, host=host, link=link, switch=OVSKernelSwitch,
-            controller=RemoteController)
+            controller=RemoteController, autoStaticArp=True)
 
     return net
 
@@ -70,7 +101,7 @@ def LinearNet(n=2, m=4, bw=100, cpu=-1, queue=100):
 
     return net
 
-def RegularTreeNet(depth=2, fanout=4, bw=BW, cpu=-1, queue=100):
+def RegularTreeNet(depth=4, fanout=2, bw=BW, cpu=-1, queue=100):
     "Create an empty network and add nodes to it."
     topo = TreeTopo(depth, fanout)
     host = custom(CPULimitedHost, cpu=cpu)
@@ -102,7 +133,7 @@ def SingleSwitchNet(numHosts=16, bw=BW, cpu=-1, queue=100, remoteController=Fals
     # Adding hosts
     for n in irange(1, numHosts):
         print "h%s" % n
-        host = net.addHost("h%s" % n, ip=("10.0.0.%s" % str(i)))
+        host = net.addHost("h%s" % n, ip=("10.0.0.%s/24" % str(i)))
         i = i + 1
         allHosts.append(host)
 
@@ -146,7 +177,7 @@ def SinglepathTreeNet(depth = 2, fanout = 4, bw=BW, cpu=-1, queue=100, remoteCon
     # Adding hosts
     for n in irange(1, pow(depth,fanout)):
         print "h%s" % n
-        host = net.addHost("h%s" % n, ip=("10.0.0.%s" % str(i)))
+        host = net.addHost("h%s" % n, ip=("10.0.0.%s/24" % str(i)))
         i = i + 1
         allHosts.append(host)
 
@@ -211,7 +242,7 @@ def MultipathTreeNet(depth=2, fanout=4, bw=BW, cpu=-1, queue=100):
     # Adding hosts
     for n in irange(1, pow(depth,fanout)):
         print "h%s" % n
-        host = net.addHost("h%s" % n, ip=("10.0.0.%s" % str(i)))
+        host = net.addHost("h%s" % n, ip=("10.0.0.%s/24" % str(i)))
         i = i + 1
         allHosts.append(host)
 
@@ -272,7 +303,8 @@ def DumbbellNet(numSwitches=2, numHostsPerSwitch=8, L=1, bw=BW, cpu=-1, queue=10
 
     info('*** Adding controller\n')
     if remoteController is True:
-        net.addController('c0', ip='172.16.2.1', port=6633)
+        #net.addController('c0', ip='172.16.2.1', port=6633)
+        net.addController('c0', ip='127.0.0.1', port=6633)
     else:
        net.addController('c0')
 
@@ -289,7 +321,7 @@ def DumbbellNet(numSwitches=2, numHostsPerSwitch=8, L=1, bw=BW, cpu=-1, queue=10
         hosts = []
         for m in irange(1, numHostsPerSwitch):
             print "s%sh%s" % (n, m)
-            host = net.addHost("s%sh%s" % (n, m), ip=("10.0.0.%s" % str(i)))
+            host = net.addHost("s%sh%s" % (n, m), ip=("10.0.0.%s/24" % str(i)))
             i = i + 1
             hosts.append(host)
  #           net.addLink(host, switch)
@@ -344,7 +376,8 @@ def ShamrockNet(numSwitches=2, numHostsFirstSwitch=12, numHostsSecondSwitch=4, L
 
     info('*** Adding controller\n')
     if remoteController is True:
-        net.addController('c0', ip='172.16.2.1', port=6633)
+        #net.addController('c0', ip='172.16.2.1', port=6633)
+        net.addController('c0', ip='127.0.0.1', port=6633)
     else:
        net.addController('c0')
 
@@ -359,7 +392,7 @@ def ShamrockNet(numSwitches=2, numHostsFirstSwitch=12, numHostsSecondSwitch=4, L
     hosts = []
     for m in irange(1, numHostsFirstSwitch):
         print "s%sh%s" % (n, m)
-        host = net.addHost("s%sh%s" % (n, m), ip=("10.0.0.%s" % str(i)))
+        host = net.addHost("s%sh%s" % (n, m), ip=("10.0.0.%s/24" % str(i)))
         i = i + 1
         hosts.append(host)
     allHosts.append(hosts)
@@ -368,7 +401,7 @@ def ShamrockNet(numSwitches=2, numHostsFirstSwitch=12, numHostsSecondSwitch=4, L
     hosts = []
     for m in irange(1, numHostsSecondSwitch):
         print "s%sh%s" % (n, m)
-        host = net.addHost("s%sh%s" % (n, m), ip=("10.0.0.%s" % str(i)))
+        host = net.addHost("s%sh%s" % (n, m), ip=("10.0.0.%s/24" % str(i)))
         i = i + 1
         hosts.append(host)
     allHosts.append(hosts)
