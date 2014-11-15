@@ -11,7 +11,6 @@ from subprocess import Popen, PIPE
 from argparse import ArgumentParser
 import multiprocessing
 from time import sleep
-from monitor.monitor import monitor_devs_ng
 import os
 import sys
 import json

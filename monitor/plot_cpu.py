@@ -39,7 +39,7 @@ def aggregate(data):
 	return map(sum, zip(*data))
 
 def plot_series():
-	data = parse_cpu_usage(args.files[0])
+	data = parse_cpu_usage(args.files[0], nprocessors=1)
 	N = len(data)
 	data = transpose(data)
 	ind = range(N)
@@ -63,7 +63,7 @@ def plot_summary():
 	plt.ylabel("CPU %")
 	to_plot=[]
 	for f in args.files:
-		data = parse_cpu_usage(f)
+		data = parse_cpu_usage(f, nprocessors=1)
 		N = len(data)
 		data = transpose(data)
 		ind = range(N)

@@ -2,7 +2,7 @@ from subprocess import Popen, PIPE
 from argparse import ArgumentParser
 import multiprocessing
 from time import sleep
-from monitor.monitor import monitor_devs_ng
+from monitor.monitor import monitor_devs_ng, monitor_cpu
 import os
 import sys
 
@@ -26,9 +26,18 @@ def HadoopTest(hosts):
 
 	print "Starting monitor ..."
 	output_dir="output"
+	monitors = []
+
+	# Start network usage monitor
 	monitor = multiprocessing.Process(target = monitor_devs_ng, args =
                 ('%s/rate.txt' % output_dir, 0.01))
 	monitor.start()
+	monitors.append(monitor)
+
+	# Start CPU usage monitor
+	monitor = multiprocessing.Process(target=monitor_cpu, args=('%s/cpu.txt' % output_dir,))
+	monitor.start()
+	monitors.append(monitor)
 
 	print "Running Hadoop simulation ..."
 	for h in hosts:
@@ -39,8 +48,10 @@ def HadoopTest(hosts):
 		sleep(1)
 
 	print "Stopping monitor ..."
-	monitor.terminate()
-        os.system("killall -9 bwm-ng")
+	for monitor in monitors:
+		monitor.terminate()
+	os.system("killall -9 bwm-ng")
+	os.system("killall -9 top")
 
 	sleep(5)
 	print "Done."
