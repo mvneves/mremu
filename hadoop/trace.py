@@ -71,12 +71,13 @@ class Trace(object):
                         transfer["dstAddress"] = None
                     else:
                         transfer["dstAddress"] = self.hostmap[transfer["dstAddress"]]
-            for transfer in self.trace["transfersMapper"]:
-                transfer["srcAddress"] = self.hostmap[transfer["srcAddress"]]
-                if transfer["dstAddress"] == "null":
-                    transfer["dstAddress"] = None
-                else:
-                    transfer["dstAddress"] = self.hostmap[transfer["dstAddress"]]
+            if self.trace["transfers"] != self.trace["transfersMapper"]:
+                for transfer in self.trace["transfersMapper"]:
+                    transfer["srcAddress"] = self.hostmap[transfer["srcAddress"]]
+                    if transfer["dstAddress"] == "null":
+                        transfer["dstAddress"] = None
+                    else:
+                        transfer["dstAddress"] = self.hostmap[transfer["dstAddress"]]
         
     def _load(self):
         self._load_trace()
